@@ -142,16 +142,16 @@
 
                 @if($canReview)
                     <form method="POST" action="{{ route('reports.approve') }}"
-                          onsubmit="return confirm('Setujui laporan {{ $periodLabel }}? Tanda tangan Anda akan dibubuhkan.');">
+                          onsubmit="return confirm('Approve laporan {{ $periodLabel }}? Tanda tangan Anda akan dibubuhkan.');">
                         @csrf
                         <input type="hidden" name="bulan" value="{{ $bulan }}">
                         <input type="hidden" name="tahun" value="{{ $tahun }}">
                         <button type="submit" class="btn btn-success" @disabled(! $hasSignature)>
-                            <i class="ti tabler-check me-1"></i> Setujui (ACC)
+                            <i class="ti tabler-check me-1"></i> Approve
                         </button>
                     </form>
                     <button type="button" class="btn btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#rejectBox">
-                        <i class="ti tabler-arrow-back-up me-1"></i> Tolak / Minta Revisi
+                        <i class="ti tabler-arrow-back-up me-1"></i> Reject
                     </button>
                 @endif
             </div>
@@ -164,7 +164,7 @@
                         <input type="hidden" name="tahun" value="{{ $tahun }}">
                         <label class="form-label">Catatan untuk Staf <span class="text-danger">*</span></label>
                         <textarea name="review_note" rows="3" class="form-control mb-2" placeholder="Apa yang perlu diperbaiki?">{{ old('review_note') }}</textarea>
-                        <button type="submit" class="btn btn-danger btn-sm">Kembalikan ke Staf</button>
+                        <button type="submit" class="btn btn-danger btn-sm">Reject &amp; Kembalikan ke Staf</button>
                     </form>
                 </div>
             @endif

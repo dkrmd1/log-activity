@@ -66,9 +66,11 @@
                     <p class="text-body-secondary small">
                         Dipakai di Laporan Bulanan
                         @if($user->isGroupHead())
-                            (kolom <strong>Diketahui oleh</strong>) saat Anda menyetujui laporan.
+                            (kolom <strong>Diketahui oleh</strong>) saat Anda menyetujui laporan, dan sebagai
+                            tanda tangan di form <strong>Kontrol Server &amp; Jaringan</strong> (hanya Group Head yang menandatangani).
                         @else
-                            (kolom <strong>Dibuat oleh</strong>) saat Anda mengajukan laporan ke Group Head.
+                            (kolom <strong>Dibuat oleh</strong>) saat Anda mengajukan laporan ke Group Head, dan sebagai
+                            <strong>Paraf</strong> di form <strong>Kontrol Server &amp; Jaringan</strong> yang Anda isi.
                         @endif
                     </p>
 

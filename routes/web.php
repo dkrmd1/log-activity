@@ -8,6 +8,7 @@ use App\Http\Controllers\ServerCheckController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\MonthlyReportController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReportApprovalController;
 use App\Http\Controllers\RequestController;
@@ -29,6 +30,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // ----- Notifikasi (semua user login) -----
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
+    Route::get('/notifications/{id}/read', [NotificationController::class, 'read'])->name('notifications.read');
 
     // ----- Profil (semua user login) -----
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -61,6 +67,9 @@ Route::middleware('auth')->group(function () {
     // ----- Kontrol Server & Jaringan (form harian, PDF landscape) -----
     Route::get('/server-checks/{server_check}/pdf', [ServerCheckController::class, 'pdf'])->name('server-checks.pdf');
     Route::get('/server-checks/{server_check}/preview', [ServerCheckController::class, 'preview'])->name('server-checks.preview');
+    Route::post('/server-checks/{server_check}/sign', [ServerCheckController::class, 'sign'])->name('server-checks.sign');
+    Route::delete('/server-checks/{server_check}/sign', [ServerCheckController::class, 'unsign'])->name('server-checks.unsign');
+    Route::post('/server-checks/{server_check}/reject', [ServerCheckController::class, 'reject'])->name('server-checks.reject');
     Route::resource('server-checks', ServerCheckController::class)->only(['index', 'store', 'edit', 'update', 'destroy']);
 
     // ----- Laporan Bulanan (semua user login) -----

@@ -14,11 +14,32 @@
 
 @section('content')
 
+    @php
+        // Staf mengisi form (Paraf = tanda tangan staf). Group Head hanya menandatangani. Admin hanya melihat.
+        $canFill = auth()->user()->isStaff();
+    @endphp
+
+    @if($check->isRejected())
+        <div class="alert alert-danger">
+            <strong>Ditolak oleh {{ $check->rejected_name }}</strong>
+            <span class="small">({{ $check->rejected_at->locale('id')->translatedFormat('d F Y, H:i') }})</span><br>
+            {!! nl2br(e($check->reject_note)) !!}
+            @if($canFill)
+                <hr class="my-2">
+                <span class="small">Perbaiki isi form sesuai keterangan di atas lalu klik Simpan. Group Head akan otomatis diberi tahu untuk memeriksa ulang.</span>
+            @endif
+        </div>
+    @endif
+
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div>
                 <h6 class="mb-0">Tanggal, {{ $check->date_label }}</h6>
-                <small class="text-body-secondary">Isi kolom Kondisi &amp; Keterangan sesuai waktu pemeriksaan. Paraf terisi otomatis dari tanda tangan Anda.</small>
+                @if($canFill)
+                    <small class="text-body-secondary">Isi kolom Kondisi &amp; Keterangan sesuai waktu pemeriksaan. Paraf terisi otomatis dari tanda tangan Anda.</small>
+                @else
+                    <small class="text-body-secondary">Hanya Staf yang dapat mengisi form ini. Kolom Paraf terisi dari tanda tangan staf yang mengisi.</small>
+                @endif
             </div>
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-outline-primary btn-sm"
@@ -46,8 +67,10 @@
                         @foreach($slots as $n => $label)
                             <th colspan="2" class="text-center">
                                 {{ $label }}
-                                <button type="button" class="btn btn-outline-success ms-1 js-all-ok" style="padding:0 .45rem; font-size:.7rem;" data-slot="{{ $n }}"
-                                        title="Isi semua Kondisi yang masih kosong dengan OK">Semua OK</button>
+                                @if($canFill)
+                                    <button type="button" class="btn btn-outline-success ms-1 js-all-ok" style="padding:0 .45rem; font-size:.7rem;" data-slot="{{ $n }}"
+                                            title="Isi semua Kondisi yang masih kosong dengan OK">Semua OK</button>
+                                @endif
                             </th>
                         @endforeach
                         <th rowspan="2" class="text-center" style="width:130px">Paraf</th>
@@ -75,7 +98,7 @@
                                 <td>{{ $e->item_name }}</td>
                                 @foreach($slots as $n => $label)
                                     <td class="cond">
-                                        <select name="entries[{{ $e->id }}][c{{ $n }}]" class="form-select form-select-sm js-cond" data-slot="{{ $n }}">
+                                        <select name="entries[{{ $e->id }}][c{{ $n }}]" class="form-select form-select-sm js-cond" data-slot="{{ $n }}" @disabled(! $canFill)>
                                             <option value=""></option>
                                             @foreach(\App\Models\ServerCheckEntry::CONDITIONS as $opt)
                                                 <option value="{{ $opt }}" @selected($e->{'c' . $n} === $opt)>{{ $opt }}</option>
@@ -86,14 +109,14 @@
                                         @if($ri === 0)
                                             <td class="note" rowspan="{{ $count }}">
                                                 <textarea name="entries[{{ $e->id }}][n{{ $n }}]" rows="{{ min(max($count, 3), 10) }}"
-                                                          class="form-control form-control-sm"
+                                                          class="form-control form-control-sm" @disabled(! $canFill)
                                                           placeholder="Keterangan {{ $label }} (satu untuk seluruh bagian {{ $code }})">{{ $e->{'n' . $n} }}</textarea>
                                             </td>
                                         @endif
                                     @else
                                         <td class="note">
                                             <textarea name="entries[{{ $e->id }}][n{{ $n }}]" rows="2"
-                                                      class="form-control form-control-sm"
+                                                      class="form-control form-control-sm" @disabled(! $canFill)
                                                       placeholder="Keterangan">{{ $e->{'n' . $n} }}</textarea>
                                         </td>
                                     @endif
@@ -109,12 +132,84 @@
             @error('entries.*') <div class="text-danger small px-4 pt-3">{{ $message }}</div> @enderror
 
             <div class="card-body">
-                <button type="submit" class="btn btn-primary">
-                    <i class="ti tabler-device-floppy me-1"></i> Simpan
-                </button>
+                @if($canFill)
+                    <button type="submit" class="btn btn-primary">
+                        <i class="ti tabler-device-floppy me-1"></i> Simpan
+                    </button>
+                @endif
                 <a href="{{ route('server-checks.index') }}" class="btn btn-outline-secondary">Kembali</a>
             </div>
         </form>
+    </div>
+
+    {{-- Tanda tangan form (muncul di kanan bawah PDF). HANYA Group Head yang bisa menandatangani. --}}
+    <div class="card mt-4">
+        <div class="card-header"><h6 class="mb-0">Tanda Tangan Group Head</h6></div>
+        <div class="card-body">
+            @if($check->isSigned())
+                <div class="d-flex flex-wrap align-items-center gap-4">
+                    <div class="border rounded p-2 bg-white">
+                        <img src="{{ $check->signed_signature_uri }}" alt="Tanda tangan" style="max-height:80px; max-width:100%;">
+                    </div>
+                    <div>
+                        <div class="fw-medium">{{ $check->signed_name }}</div>
+                        <div class="small text-body-secondary">
+                            Ditandatangani {{ $check->signed_at->locale('id')->translatedFormat('d F Y, H:i') }}
+                        </div>
+                        @if(auth()->user()->isGroupHead())
+                            <form method="POST" action="{{ route('server-checks.unsign', $check) }}" class="mt-2"
+                                  onsubmit="return confirm('Batalkan approve form ini? Tanda tangan Anda akan dihapus.');">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Batalkan Approve</button>
+                            </form>
+                        @endif
+                    </div>
+                </div>
+                <p class="text-body-secondary small mt-3 mb-0">
+                    Kalau isi form diubah setelah ini, tanda tangan otomatis dihapus dan Group Head perlu menandatangani ulang.
+                </p>
+            @elseif(auth()->user()->isGroupHead())
+                <p class="text-body-secondary">
+                    Blok nama &amp; tanda tangan di kanan bawah PDF hanya diisi oleh <strong>Group Head</strong>.
+                    Klik <strong>Approve</strong> untuk menandatangani form tanggal ini dengan tanda tangan Anda,
+                    atau <strong>Reject</strong> (wajib mengisi keterangan) untuk mengembalikannya ke Staf.
+                </p>
+                @if(! auth()->user()->signature)
+                    <div class="alert alert-warning py-2">
+                        Tanda tangan Anda belum diisi. <a href="{{ route('profile.edit') }}" class="alert-link">Isi di Profil Saya</a> dulu.
+                    </div>
+                @endif
+                <div class="d-flex flex-wrap gap-2">
+                    <form method="POST" action="{{ route('server-checks.sign', $check) }}"
+                          onsubmit="return confirm('Approve form tanggal {{ $check->date_label }}? Tanda tangan Anda akan dibubuhkan.');">
+                        @csrf
+                        <button type="submit" class="btn btn-success" @disabled(! auth()->user()->signature)>
+                            <i class="ti tabler-check me-1"></i> Approve
+                        </button>
+                    </form>
+                    <button type="button" class="btn btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#rejectBox">
+                        <i class="ti tabler-arrow-back-up me-1"></i> Reject
+                    </button>
+                </div>
+
+                @error('reject_note') <div class="alert alert-danger mt-3 mb-0">{{ $message }}</div> @enderror
+
+                <div class="collapse mt-3 {{ $errors->has('reject_note') ? 'show' : '' }}" id="rejectBox">
+                    <form method="POST" action="{{ route('server-checks.reject', $check) }}">
+                        @csrf
+                        <label class="form-label">Keterangan penolakan <span class="text-danger">*</span></label>
+                        <textarea name="reject_note" rows="3" maxlength="1000" class="form-control mb-2" placeholder="Apa yang perlu diperbaiki Staf?" required>{{ old('reject_note') }}</textarea>
+                        <button type="submit" class="btn btn-danger btn-sm">Reject &amp; Kembalikan ke Staf</button>
+                    </form>
+                </div>
+            @else
+                <p class="text-body-secondary mb-0">
+                    Form ini belum ditandatangani. Blok tanda tangan di kanan bawah PDF hanya diisi oleh Group Head,
+                    jadi dibiarkan kosong sampai Group Head menandatangani.
+                </p>
+            @endif
+        </div>
     </div>
 
     @include('server-checks._preview_modal')

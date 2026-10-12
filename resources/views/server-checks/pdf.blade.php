@@ -54,6 +54,13 @@
         td.paraf img { height: 9pt; }
         td.paraf .ini { font-size: 6pt; }
 
+        /* Blok tanda tangan penanggung jawab (kanan bawah, di bawah tabel halaman terakhir) */
+        table.signoff { width: 100%; border-collapse: collapse; margin-top: 10pt; page-break-inside: avoid; }
+        table.signoff td { border: none; padding: 0; vertical-align: top; }
+        td.so { width: 24%; text-align: center; font-size: 8pt; }
+        .so-sig { height: 42pt; }
+        .so-sig img { height: 40pt; }
+
         footer { position: fixed; bottom: -22pt; left: 0; right: 0; text-align: right; font-size: 7pt; color: #666; }
         .page-num:before { content: counter(page); }
     </style>
@@ -70,7 +77,11 @@
 
 @foreach($checks as $check)
     {{-- Halaman dibagi di ServerCheckLayout: 1 bagian (A, B, C, ...) tidak dipotong antar-halaman. --}}
-    @foreach(\App\Support\ServerCheckLayout::pages($check->entries) as $page)
+    @php
+        $pages = \App\Support\ServerCheckLayout::pages($check->entries);
+        $lastPage = count($pages) - 1;
+    @endphp
+    @foreach($pages as $pi => $page)
         <div @if($pageNo++ > 0) style="page-break-before: always;" @endif>
 
             <table class="top">
@@ -80,6 +91,7 @@
                 </tr>
             </table>
 
+            @if(count($page) > 0)
             <table class="form">
                 <thead>
                 {{-- Baris pengatur lebar kolom (tinggi 0). dompdf mengabaikan <colgroup>, jadi lebar diatur lewat baris ini. --}}
@@ -148,6 +160,24 @@
                 @endforeach
                 </tbody>
             </table>
+            @endif
+
+            @if($pi === $lastPage)
+                <table class="signoff">
+                    <tr>
+                        <td></td>
+                        <td class="so">
+                            <div>Tanggal, {{ $check->date_label }}</div>
+                            <div class="so-sig">
+                                @if(!empty($check->signed_signature_uri))
+                                    <img src="{{ $check->signed_signature_uri }}" alt="">
+                                @endif
+                            </div>
+                            <div>{{ $check->signed_name }}</div>
+                        </td>
+                    </tr>
+                </table>
+            @endif
         </div>
     @endforeach
 @endforeach

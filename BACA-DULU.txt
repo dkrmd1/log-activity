@@ -1,0 +1,63 @@
+NOTIFIKASI TANDA TANGAN / PERSETUJUAN + TOLAK FORM KONTROL SERVER (v3)
+=======================================================================
+Log Activity IT & GA
+
+CARA PASANG
+1. Ekstrak ZIP ini LANGSUNG ke root proyek (folder yang berisi artisan, app, routes, ...).
+   Pilih "Replace / Timpa" kalau ditanya. Kalau Anda sudah memasang ZIP v1/v2, tidak apa-apa,
+   file v3 menimpanya (ZIP ini sudah berisi semuanya).
+2. Buat tabel & kolom baru di database.
+   a) Ada Terminal :  php artisan migrate
+      (membuat tabel notifications + 4 kolom penolakan di server_checks)
+   b) Tanpa Terminal (cPanel): buka phpMyAdmin -> pilih database -> tab SQL, lalu jalankan
+      SATU PER SATU, urut:
+        1. isi sql/notifications.sql          (lewati kalau tabel notifications sudah dibuat dari v1)
+        2. isi sql/server-check-reject.sql
+      Jangan jalankan salah satunya dua kali, dan jangan campur dengan php artisan migrate.
+3. Bersihkan cache:  php artisan view:clear && php artisan route:clear
+   (tanpa Terminal: hapus isi storage/framework/views dan bootstrap/cache/routes-*.php kalau ada)
+
+FILE YANG DITIMPA (sudah ada di proyek)
+  routes/web.php
+  resources/views/layouts/app.blade.php
+  resources/views/server-checks/edit.blade.php
+  resources/views/server-checks/index.blade.php
+  resources/views/reports/index.blade.php
+  app/Models/ServerCheck.php
+  app/Http/Controllers/ReportApprovalController.php
+  app/Http/Controllers/ServerCheckController.php
+  tests/Feature/ServerCheckSignatureTest.php      (hanya teks tombol "Tanda Tangani Form" -> "Approve")
+
+FILE BARU
+  app/Notifications/SignatureActivity.php
+  app/Http/Controllers/NotificationController.php
+  database/migrations/2026_01_01_000017_create_notifications_table.php
+  database/migrations/2026_01_01_000018_add_rejection_to_server_checks_table.php
+  resources/views/layouts/partials/notification-bell.blade.php
+  resources/views/notifications/index.blade.php
+  tests/Feature/SignatureNotificationTest.php     (opsional, untuk dites di lokal)
+  sql/*.sql                                        (hanya untuk phpMyAdmin, tidak perlu diunggah ke server)
+
+ATURAN NOTIFIKASI
+  Staf ajukan Laporan Bulanan              -> semua Group Head
+  Group Head setujui / tolak laporan       -> Staf pengaju
+  Staf melengkapi form Kontrol Server      -> semua Group Head  (sekali, saat 3 waktu pemeriksaan terisi semua)
+  Staf ubah form yang sudah di-ttd         -> semua Group Head  (ttd terhapus, perlu ttd ulang)
+  Group Head ttd / batal ttd form          -> Staf pembuat + Staf yang paraf
+  Group Head TOLAK form (wajib keterangan) -> Staf pembuat + Staf yang paraf (keterangan ikut di notifikasi)
+  Staf merevisi form yang ditolak          -> semua Group Head  ("sudah direvisi, mohon diperiksa ulang")
+  Admin tidak ada di rantai persetujuan, jadi tidak menerima notifikasi.
+
+ATURAN TOLAK FORM KONTROL SERVER
+  - Hanya Group Head. Keterangan WAJIB diisi (maks. 1000 karakter).
+  - Form yang sudah ditandatangani tidak bisa ditolak: batalkan tanda tangan dulu.
+  - Keterangan tampil sebagai kotak merah di halaman form (dilihat Staf) dan badge "Ditolak" di daftar.
+  - Penolakan dicabut otomatis saat Staf menyimpan perubahan nyata, atau saat Group Head menandatangani.
+  - Menolak tidak mengubah updated_at, jadi tidak membuat Laporan Bulanan dianggap "data berubah".
+
+TOMBOL (v3)
+  Group Head memakai dua tombol yang sama di Kontrol Server dan Laporan Bulanan:
+    Approve  (dulu "Tanda Tangani Form" / "Setujui (ACC)")  -> membubuhkan tanda tangan
+    Reject   (dulu "Tolak / Minta Revisi", dan "Hapus" di daftar Kontrol Server) -> wajib isi keterangan
+  Di daftar Kontrol Server, Group Head melihat Approve & Reject (bukan Hapus). Staf dan Admin tetap
+  melihat Hapus. Form yang sudah di-Approve dibatalkan lewat halaman form ("Batalkan Approve").

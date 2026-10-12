@@ -3,14 +3,21 @@
 namespace App\Http\Controllers;
 
 use App\Models\MonthlyReport;
+use App\Models\User;
+use App\Notifications\SignatureActivity;
 use App\Support\Signature;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
 
 /**
  * Alur persetujuan Laporan Bulanan:
  *   Staf  -> "Ajukan"           -> status submitted (tanda tangan "Dibuat oleh" tersimpan)
  *   Group Head -> "Setujui"     -> status approved  (tanda tangan "Diketahui oleh" tersimpan)
  *   Group Head -> "Tolak"       -> status rejected  (wajib isi catatan, Staf perbaiki lalu ajukan ulang)
+ *
+ * Setiap langkah mengirim notifikasi ke pihak terkait.
  */
 class ReportApprovalController extends Controller
 {
@@ -62,6 +69,18 @@ class ReportApprovalController extends Controller
             'review_note' => null,
         ])->save();
 
+        // Notifikasi ke semua Group Head: ada laporan menunggu persetujuan.
+        $this->notify(
+            User::where('role', 'group_head')->get(),
+            $user,
+            'Laporan Bulanan menunggu persetujuan',
+            "{$user->name} mengajukan Laporan Bulanan {$this->label($bulan, $tahun)}.",
+            $bulan,
+            $tahun,
+            'tabler-file-check',
+            'warning'
+        );
+
         return redirect()
             ->route('reports.index', ['bulan' => $bulan, 'tahun' => $tahun])
             ->with('success', 'Laporan berhasil diajukan ke Group Head.');
@@ -102,6 +121,18 @@ class ReportApprovalController extends Controller
             'review_note' => null,
         ]);
 
+        // Notifikasi ke Staf yang mengajukan.
+        $this->notify(
+            User::whereKey($report->prepared_by)->get(),
+            $user,
+            'Laporan Bulanan disetujui',
+            "{$user->name} menyetujui dan menandatangani Laporan Bulanan {$this->label($bulan, $tahun)}.",
+            $bulan,
+            $tahun,
+            'tabler-circle-check',
+            'success'
+        );
+
         return $back->with('success', 'Laporan disetujui dan ditandatangani.');
     }
 
@@ -136,7 +167,45 @@ class ReportApprovalController extends Controller
             'review_note' => $request->input('review_note'),
         ]);
 
+        // Notifikasi ke Staf yang mengajukan, lengkap dengan catatan penolakan.
+        $this->notify(
+            User::whereKey($report->prepared_by)->get(),
+            $user,
+            'Laporan Bulanan ditolak',
+            "{$user->name} mengembalikan Laporan Bulanan {$this->label($bulan, $tahun)}. Catatan: "
+                . Str::limit($request->input('review_note'), 120),
+            $bulan,
+            $tahun,
+            'tabler-circle-x',
+            'danger'
+        );
+
         return $back->with('success', 'Laporan dikembalikan ke Staf untuk direvisi.');
+    }
+
+    /**
+     * Kirim notifikasi ke $recipients, tanpa pelaku itu sendiri.
+     */
+    protected function notify($recipients, User $actor, string $title, string $message, int $bulan, int $tahun, string $icon, string $color): void
+    {
+        $recipients = $recipients->reject(fn (User $u) => $u->id === $actor->id);
+
+        if ($recipients->isEmpty()) {
+            return;
+        }
+
+        Notification::send($recipients, new SignatureActivity(
+            $title,
+            $message,
+            route('reports.index', ['bulan' => $bulan, 'tahun' => $tahun], false), // path relatif
+            $icon,
+            $color
+        ));
+    }
+
+    protected function label(int $bulan, int $tahun): string
+    {
+        return Carbon::create($tahun, $bulan, 1)->locale('id')->translatedFormat('F Y');
     }
 
     /**

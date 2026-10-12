@@ -11,9 +11,13 @@ use Illuminate\Support\Collection;
 
 class ServerCheck extends Model
 {
-    protected $fillable = ['check_date', 'created_by'];
+    protected $fillable = [
+        'check_date', 'created_by',
+        'signed_by', 'signed_name', 'signed_signature', 'signed_at',
+        'rejected_by', 'rejected_name', 'reject_note', 'rejected_at',
+    ];
 
-    protected $casts = ['check_date' => 'date'];
+    protected $casts = ['check_date' => 'date', 'signed_at' => 'datetime', 'rejected_at' => 'datetime'];
 
     public function entries(): HasMany
     {
@@ -23,6 +27,68 @@ class ServerCheck extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function isSigned(): bool
+    {
+        return filled($this->signed_signature);
+    }
+
+    /**
+     * Form sedang ditolak Group Head (menunggu direvisi Staf).
+     */
+    public function isRejected(): bool
+    {
+        return filled($this->rejected_at) && filled($this->reject_note);
+    }
+
+    /**
+     * Cabut penolakan (Staf sudah merevisi atau Group Head akhirnya menandatangani),
+     * tanpa mengubah updated_at supaya tidak dianggap "data berubah" oleh Laporan Bulanan.
+     */
+    public function clearRejection(): void
+    {
+        $this->timestamps = false;
+        $this->update(['rejected_by' => null, 'rejected_name' => null, 'reject_note' => null, 'rejected_at' => null]);
+        $this->timestamps = true;
+    }
+
+    /**
+     * Tanda tangan penanggung jawab sebagai data URI (untuk web & PDF), atau null.
+     */
+    public function getSignedSignatureUriAttribute(): ?string
+    {
+        return Signature::dataUri($this->signed_signature, true);
+    }
+
+    /**
+     * Isi blok "Tanggal / tanda tangan / nama" di kanan bawah form.
+     * Blok ini HANYA diisi oleh tanda tangan Group Head (tombol "Tanda Tangani Form").
+     * Kalau belum ditandatangani Group Head, blok dibiarkan kosong - tidak ada fallback ke
+     * tanda tangan staf/petugas. Tanda tangan staf hanya muncul sebagai Paraf per baris.
+     *
+     * @return array{name: ?string, uri: ?string, signed: bool}
+     */
+    public function getSignoffAttribute(): array
+    {
+        if (! $this->isSigned()) {
+            return ['name' => null, 'uri' => null, 'signed' => false];
+        }
+
+        return ['name' => $this->signed_name, 'uri' => $this->signed_signature_uri, 'signed' => true];
+    }
+
+    /**
+     * Hapus tanda tangan form (file salinan + kolomnya), tanpa mengubah updated_at
+     * supaya tidak dianggap "data berubah" oleh Laporan Bulanan.
+     */
+    public function clearSignature(): void
+    {
+        Signature::delete($this->signed_signature);
+
+        $this->timestamps = false;
+        $this->update(['signed_by' => null, 'signed_name' => null, 'signed_signature' => null, 'signed_at' => null]);
+        $this->timestamps = true;
     }
 
     /**
@@ -135,7 +201,7 @@ class ServerCheck extends Model
         }
 
         return User::whereIn('id', $ids)->get()
-            ->mapWithKeys(fn (User $u) => [$u->id => Signature::dataUri($u->signature)])
+            ->mapWithKeys(fn (User $u) => [$u->id => Signature::dataUri($u->signature, true)])
             ->filter()
             ->all();
     }

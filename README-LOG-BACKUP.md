@@ -51,6 +51,12 @@ Menu **Log Activity -> Kontrol Server**. Satu form per tanggal, pemeriksaan puku
 diambil dari form asli.
 - **Isi form:** buat/buka form per tanggal -> isi -> Simpan. Tombol "Semua OK" per waktu mempercepat pengisian.
 - **Paraf** terisi otomatis dari tanda tangan user yang terakhir mengisi baris itu (kalau belum punya tanda tangan, tampil nama).
+- **Nama & tanda tangan di kanan bawah PDF** (`Tanggal, ...` + tanda tangan + nama, seperti form asli) terisi **otomatis**
+  dari petugas yang terakhir mengisi form (sama seperti kolom Paraf), selama petugas itu sudah punya tanda tangan di Profil.
+  Opsional: kartu **Tanda Tangan Form** di halaman edit untuk menetapkan penanda tangan resmi tertentu (Staf / Group Head).
+  Penanda tangan resmi menggantikan yang otomatis; kalau isi form diubah sesudahnya, tanda tangan resmi dihapus dan blok
+  kembali otomatis. Dibatalkan oleh penanda tangan sendiri, Group Head, atau Admin. Admin tidak punya tanda tangan,
+  jadi kalau Admin yang mengisi, hanya nama yang tampil.
 - **Lihat** = pratinjau PDF langsung di browser. **PDF** = download, **A4 landscape**, tampilan seperti form asli.
 - **Laporan Bulanan:** muncul section baru **Monitoring Ruang Server Summary <bulan tahun>** (portrait, seperti section lain):
   tabel per tanggal dengan status tiap jam pemeriksaan (08:00 / 12:00 / 16:30), contoh `OK  OK  OK`.
@@ -61,7 +67,7 @@ diambil dari form asli.
 - **Admin:** menu **Administrasi -> Item Kontrol Server** untuk menambah/ubah/nonaktifkan bagian & item (mis. bagian D, E).
   Perubahan hanya berlaku untuk form BARU; form lama tidak berubah.
 - Satu bagian tidak dipotong antar-halaman; bagian yang lebih besar dari 1 halaman dipotong per baris dengan judul "(lanjutan)".
-- Warna header ada di bagian `<style>` file `resources/views/server-checks/pdf.blade.php` (merah `#FF4B4B`, kuning `#FFFF00`).
+- Warna header ada di bagian `<style>` file `resources/views/server-checks/sheet.blade.php` (merah `#FF4B4B`, kuning `#FFFF00`).
 
 ## File BARU
 ```
@@ -74,7 +80,8 @@ app/Models/ServerCheckEntry.php
 app/Http/Controllers/ServerCheckController.php
 app/Http/Controllers/ControlItemController.php
 database/migrations/2026_01_01_000015_create_server_check_tables.php
-resources/views/server-checks/*.blade.php     (index, edit, pdf, _preview_modal)
+database/migrations/2026_01_01_000016_add_signature_to_server_checks_table.php
+resources/views/server-checks/*.blade.php     (index, edit, sheet [template PDF], _preview_modal)
 resources/views/control-items/index.blade.php
 app/Models/BackupLog.php
 app/Models/Category.php
@@ -119,8 +126,12 @@ resources/views/reports/pdf_content.blade.php
 ## Jalankan
 ```bash
 php artisan migrate
+php artisan view:clear      # WAJIB setelah menimpa file: buang cache tampilan lama
 php artisan serve
 ```
+Catatan: file dari zip membawa tanggal lama, sehingga Laravel bisa terus memakai tampilan lama yang sudah ter-cache.
+Kalau perubahan tampilan tidak muncul, jalankan `php artisan view:clear` (atau `php artisan optimize:clear`).
+`resources/views/server-checks/pdf.blade.php` (versi lama) sudah diganti nama menjadi `sheet.blade.php` dan boleh dihapus.
 Langkah pertama setelah login: **Staf dan Group Head isi tanda tangan di Profil Saya** (Admin tidak perlu).
 (Halaman Manajemen User punya kolom "Tanda Tangan" untuk memantau siapa yang belum mengisi.)
 

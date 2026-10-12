@@ -15,15 +15,22 @@ namespace App\Support;
 class ServerCheckLayout
 {
     // Ruang isi tabel per halaman A4 landscape (pt), sudah dikurangi judul + header tabel + margin aman ~5%.
-    public const PAGE_BODY = 455.0;
+    public const PAGE_BODY = 465.0;
+
+    // Ruang untuk blok "Tanggal / tanda tangan / nama" di bawah tabel halaman terakhir (pt).
+    public const SIGN_BLOCK = 78.0;
+
+    // PAGE_BODY sengaja ~30pt lebih kecil dari ruang sebenarnya (margin aman). Untuk blok tanda tangan
+    // (yang tidak boleh terpotong) separuhnya boleh dipakai, supaya tidak membuat halaman tambahan tanpa perlu.
+    protected const SIGN_SLACK = 15.0;
 
     protected const TITLE_ROW = 12.6;      // baris judul bagian
-    protected const ROW_MIN = 12.4;        // baris 1 baris teks
+    protected const ROW_MIN = 15.5;        // baris 1 baris teks (sudah termasuk Paraf setinggi 12pt)
     protected const PAD = 2.8;             // padding atas+bawah sel
     protected const ITEM_LINE = 8.4;       // tinggi 1 baris teks nama item
     protected const NOTE_LINE = 8.8;       // tinggi 1 baris teks keterangan
-    protected const ITEM_CHARS = 56;       // perkiraan karakter per baris di kolom Item
-    protected const NOTE_CHARS = 37;       // perkiraan karakter per baris di kolom Keterangan
+    protected const ITEM_CHARS = 62;       // perkiraan karakter per baris di kolom Item
+    protected const NOTE_CHARS = 35;       // perkiraan karakter per baris di kolom Keterangan
 
     /**
      * @param  iterable  $entries  baris form (urut sesuai sort_order)
@@ -93,6 +100,11 @@ class ServerCheckLayout
                     $remaining = self::PAGE_BODY;
                 }
             }
+        }
+
+        // Blok tanda tangan tidak muat di halaman terakhir -> beri 1 halaman tambahan (hanya judul + blok tanda tangan).
+        if ($remaining + self::SIGN_SLACK < self::SIGN_BLOCK) {
+            $pages[] = [];
         }
 
         return $pages;
