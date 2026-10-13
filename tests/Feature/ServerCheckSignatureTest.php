@@ -185,19 +185,19 @@ class ServerCheckSignatureTest extends TestCase
         $check = $this->newCheck();
         $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fillPayload($check));
 
-        // Staf: bisa mengisi & simpan, tidak ada tombol tanda tangan
+        // Staf: bisa mengisi & simpan, tidak ada tombol Reject
         $this->actingAs($this->staff)->get(route('server-checks.edit', $check))
             ->assertOk()->assertSee('Simpan')->assertSee('Semua OK')
-            ->assertDontSee('Approve');
+            ->assertDontSee('Reject');
 
-        // Group Head: bisa tanda tangan, tidak bisa mengisi
+        // Group Head: hanya ada Reject (tanda tangan otomatis, tanpa tombol Approve), tidak bisa mengisi
         $this->actingAs($this->gh)->get(route('server-checks.edit', $check))
-            ->assertOk()->assertSee('Approve')
+            ->assertOk()->assertSee('Reject')->assertDontSee('Approve')
             ->assertDontSee('Semua OK')->assertDontSee('>Simpan<', false)->assertSee('disabled', false);
 
         // Admin: hanya melihat
         $this->actingAs($this->admin)->get(route('server-checks.edit', $check))
-            ->assertOk()->assertDontSee('Approve')->assertDontSee('Semua OK');
+            ->assertOk()->assertDontSee('Reject')->assertDontSee('Semua OK');
     }
 
     public function test_halaman_index_dan_pdf_tampil_untuk_semua_role(): void

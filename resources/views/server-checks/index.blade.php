@@ -38,8 +38,9 @@
                             Form harian dibuat dan diisi oleh <strong>Staf</strong>
                             (kolom Paraf memakai tanda tangan staf yang mengisi).
                             @if(auth()->user()->isGroupHead())
-                                Sebagai Group Head, gunakan tombol <em>Approve</em> atau <em>Reject</em>
-                                pada riwayat di bawah untuk form yang sudah terisi.
+                                Sebagai Group Head, tanda tangan Anda <strong>terpasang otomatis</strong> saat Anda membuka
+                                form yang sudah lengkap (ikon <em>Lihat</em> pada riwayat di bawah). Gunakan <em>Reject</em>
+                                kalau ada yang perlu diperbaiki.
                             @endif
                         </p>
                     @endif
@@ -107,7 +108,7 @@
                             @endif
                         </td>
                         <td class="text-end text-nowrap">
-                            <a href="{{ route('server-checks.edit', $check) }}" class="btn btn-icon btn-text-secondary" title="{{ $canFill ? 'Isi / Edit' : (auth()->user()->isGroupHead() ? 'Lihat / Approve' : 'Lihat') }}">
+                            <a href="{{ route('server-checks.edit', $check) }}" class="btn btn-icon btn-text-secondary" title="{{ $canFill ? 'Isi / Edit' : (auth()->user()->isGroupHead() ? 'Lihat / Periksa' : 'Lihat') }}">
                                 <i class="ti tabler-edit"></i>
                             </a>
                             <button type="button" class="btn btn-icon btn-text-primary" title="Lihat"
@@ -119,15 +120,8 @@
                                 <i class="ti tabler-file-type-pdf"></i>
                             </a>
                             @if(auth()->user()->isGroupHead())
-                                {{-- Group Head: Approve / Reject (bukan Hapus). Form yang sudah di-approve dibatalkan lewat halaman form. --}}
-                                @unless($check->isSigned())
-                                    <form action="{{ route('server-checks.sign', $check) }}" method="POST" class="d-inline"
-                                          onsubmit="return confirm('Approve form tanggal {{ $check->date_label }}? Tanda tangan Anda akan dibubuhkan.');">
-                                        @csrf
-                                        <button type="submit" class="btn btn-icon btn-text-success" title="Approve">
-                                            <i class="ti tabler-check"></i>
-                                        </button>
-                                    </form>
+                                {{-- Group Head: Reject (bukan Hapus). Tanda tangan terpasang otomatis saat form dibuka. --}}
+                                @unless($check->isRejected())
                                     <button type="button" class="btn btn-icon btn-text-danger" title="Reject"
                                             data-bs-toggle="modal" data-bs-target="#rejectModal"
                                             data-reject-url="{{ route('server-checks.reject', $check) }}"

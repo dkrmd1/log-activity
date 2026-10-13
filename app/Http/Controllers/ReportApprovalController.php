@@ -111,27 +111,7 @@ class ReportApprovalController extends Controller
             return $back->with('error', 'Tanda tangan Anda belum ada. Isi dulu di menu Profil Saya, lalu setujui lagi.');
         }
 
-        $report->update([
-            'status' => MonthlyReport::APPROVED,
-            'reviewed_by' => $user->id,
-            'reviewed_name' => $user->name,
-            'reviewed_position' => $user->position_label,
-            'reviewed_signature' => Signature::snapshot($user->signature),
-            'reviewed_at' => now(),
-            'review_note' => null,
-        ]);
-
-        // Notifikasi ke Staf yang mengajukan.
-        $this->notify(
-            User::whereKey($report->prepared_by)->get(),
-            $user,
-            'Laporan Bulanan disetujui',
-            "{$user->name} menyetujui dan menandatangani Laporan Bulanan {$this->label($bulan, $tahun)}.",
-            $bulan,
-            $tahun,
-            'tabler-circle-check',
-            'success'
-        );
+        $this->approveAs($report, $user, $bulan, $tahun);
 
         return $back->with('success', 'Laporan disetujui dan ditandatangani.');
     }
@@ -151,8 +131,8 @@ class ReportApprovalController extends Controller
         $report = MonthlyReport::forPeriod($bulan, $tahun)->first();
         $back = redirect()->route('reports.index', ['bulan' => $bulan, 'tahun' => $tahun]);
 
-        if (! $report || $report->status !== MonthlyReport::SUBMITTED) {
-            return $back->with('error', 'Tidak ada laporan yang menunggu persetujuan di periode ini.');
+        if (! $report || ! in_array($report->status, [MonthlyReport::SUBMITTED, MonthlyReport::APPROVED], true)) {
+            return $back->with('error', 'Tidak ada laporan yang bisa di-reject di periode ini.');
         }
 
         Signature::delete($report->reviewed_signature);
@@ -181,6 +161,65 @@ class ReportApprovalController extends Controller
         );
 
         return $back->with('success', 'Laporan dikembalikan ke Staf untuk direvisi.');
+    }
+
+    /**
+     * Persetujuan OTOMATIS: dipanggil saat Group Head membuka halaman Laporan Bulanan.
+     * Hanya berlaku kalau laporan berstatus "diajukan", datanya belum berubah sejak diajukan,
+     * dan Group Head sudah punya tanda tangan di Profil.
+     *
+     * @return string|null 'approved' | 'no_signature' | null (tidak ada yang perlu dilakukan)
+     */
+    public function autoApprove(User $user, int $bulan, int $tahun): ?string
+    {
+        if (! $user->isGroupHead()) {
+            return null;
+        }
+
+        $report = MonthlyReport::forPeriod($bulan, $tahun)->first();
+
+        if (! $report || $report->status !== MonthlyReport::SUBMITTED || $report->prepared_by === $user->id) {
+            return null;
+        }
+
+        if (! $report->isCurrent(MonthlyReport::snapshotFor($bulan, $tahun)['fingerprint'])) {
+            return null;
+        }
+
+        if (! Signature::exists($user->signature)) {
+            return 'no_signature';
+        }
+
+        $this->approveAs($report, $user, $bulan, $tahun);
+
+        return 'approved';
+    }
+
+    /**
+     * Setujui + tanda tangani laporan atas nama $user, lalu beri tahu Staf pengaju.
+     */
+    protected function approveAs(MonthlyReport $report, User $user, int $bulan, int $tahun): void
+    {
+        $report->update([
+            'status' => MonthlyReport::APPROVED,
+            'reviewed_by' => $user->id,
+            'reviewed_name' => $user->name,
+            'reviewed_position' => $user->position_label,
+            'reviewed_signature' => Signature::snapshot($user->signature),
+            'reviewed_at' => now(),
+            'review_note' => null,
+        ]);
+
+        $this->notify(
+            User::whereKey($report->prepared_by)->get(),
+            $user,
+            'Laporan Bulanan disetujui',
+            "{$user->name} menyetujui dan menandatangani Laporan Bulanan {$this->label($bulan, $tahun)}.",
+            $bulan,
+            $tahun,
+            'tabler-circle-check',
+            'success'
+        );
     }
 
     /**

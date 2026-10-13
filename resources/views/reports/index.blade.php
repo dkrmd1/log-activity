@@ -64,7 +64,9 @@
 
         $hasData = ($summary['total'] + $summary['backups'] + $summary['controls']) > 0;
         $canSubmit = $isStaff && $hasData && (! $approval || $status === 'rejected' || $dataChanged);
-        $canReview = $isGH && $approval && $status === 'submitted' && ! $dataChanged;
+        // Group Head: tanda tangan/persetujuan terpasang OTOMATIS saat membuka halaman ini; yang tersisa hanya Reject.
+        $canReject = $isGH && $approval && in_array($status, ['submitted', 'approved'], true) && ! $dataChanged;
+        $needsGhSignature = $isGH && $approval && $status === 'submitted' && ! $dataChanged;
     @endphp
 
     <div class="card mb-4">
@@ -112,10 +114,10 @@
                 <p class="text-body-secondary">Laporan periode ini belum diajukan ke Group Head.</p>
             @endif
 
-            @if(($canSubmit || $canReview) && ! $hasSignature)
+            @if(($canSubmit || $needsGhSignature) && ! $hasSignature)
                 <div class="alert alert-warning">
                     Tanda tangan Anda belum diisi. <a href="{{ route('profile.edit') }}" class="alert-link">Isi di Profil Saya</a>
-                    dulu sebelum {{ $canSubmit ? 'mengajukan' : 'menyetujui' }} laporan.
+                    dulu {{ $canSubmit ? 'sebelum mengajukan laporan.' : 'supaya laporan bisa ditandatangani otomatis saat Anda membuka halaman ini.' }}
                 </div>
             @endif
 
@@ -140,23 +142,14 @@
                     </form>
                 @endif
 
-                @if($canReview)
-                    <form method="POST" action="{{ route('reports.approve') }}"
-                          onsubmit="return confirm('Approve laporan {{ $periodLabel }}? Tanda tangan Anda akan dibubuhkan.');">
-                        @csrf
-                        <input type="hidden" name="bulan" value="{{ $bulan }}">
-                        <input type="hidden" name="tahun" value="{{ $tahun }}">
-                        <button type="submit" class="btn btn-success" @disabled(! $hasSignature)>
-                            <i class="ti tabler-check me-1"></i> Approve
-                        </button>
-                    </form>
+                @if($canReject)
                     <button type="button" class="btn btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#rejectBox">
                         <i class="ti tabler-arrow-back-up me-1"></i> Reject
                     </button>
                 @endif
             </div>
 
-            @if($canReview)
+            @if($canReject)
                 <div class="collapse mt-3 {{ $errors->has('review_note') ? 'show' : '' }}" id="rejectBox">
                     <form method="POST" action="{{ route('reports.reject') }}">
                         @csrf

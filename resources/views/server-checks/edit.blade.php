@@ -157,42 +157,43 @@
                             Ditandatangani {{ $check->signed_at->locale('id')->translatedFormat('d F Y, H:i') }}
                         </div>
                         @if(auth()->user()->isGroupHead())
-                            <form method="POST" action="{{ route('server-checks.unsign', $check) }}" class="mt-2"
-                                  onsubmit="return confirm('Batalkan approve form ini? Tanda tangan Anda akan dihapus.');">
-                                @csrf
-                                @method('DELETE')
-                                <button type="submit" class="btn btn-sm btn-outline-danger">Batalkan Approve</button>
-                            </form>
+                            <button type="button" class="btn btn-sm btn-outline-danger mt-2" data-bs-toggle="collapse" data-bs-target="#rejectBox">
+                                <i class="ti tabler-arrow-back-up me-1"></i> Reject
+                            </button>
                         @endif
                     </div>
                 </div>
                 <p class="text-body-secondary small mt-3 mb-0">
-                    Kalau isi form diubah setelah ini, tanda tangan otomatis dihapus dan Group Head perlu menandatangani ulang.
+                    Kalau isi form diubah setelah ini, tanda tangan otomatis dihapus dan akan terpasang otomatis lagi saat Group Head membuka form yang sudah lengkap.
                 </p>
             @elseif(auth()->user()->isGroupHead())
                 <p class="text-body-secondary">
-                    Blok nama &amp; tanda tangan di kanan bawah PDF hanya diisi oleh <strong>Group Head</strong>.
-                    Klik <strong>Approve</strong> untuk menandatangani form tanggal ini dengan tanda tangan Anda,
-                    atau <strong>Reject</strong> (wajib mengisi keterangan) untuk mengembalikannya ke Staf.
+                    Tanda tangan Anda <strong>terpasang otomatis</strong> saat Anda membuka form yang sudah lengkap
+                    (ketiga waktu pemeriksaan terisi).
+                    @if($check->isRejected())
+                        Form ini sedang ditolak, jadi menunggu Staf merevisi.
+                    @else
+                        Form ini belum lengkap, jadi belum ditandatangani.
+                    @endif
                 </p>
                 @if(! auth()->user()->signature)
                     <div class="alert alert-warning py-2">
                         Tanda tangan Anda belum diisi. <a href="{{ route('profile.edit') }}" class="alert-link">Isi di Profil Saya</a> dulu.
                     </div>
                 @endif
-                <div class="d-flex flex-wrap gap-2">
-                    <form method="POST" action="{{ route('server-checks.sign', $check) }}"
-                          onsubmit="return confirm('Approve form tanggal {{ $check->date_label }}? Tanda tangan Anda akan dibubuhkan.');">
-                        @csrf
-                        <button type="submit" class="btn btn-success" @disabled(! auth()->user()->signature)>
-                            <i class="ti tabler-check me-1"></i> Approve
-                        </button>
-                    </form>
+                @unless($check->isRejected())
                     <button type="button" class="btn btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#rejectBox">
                         <i class="ti tabler-arrow-back-up me-1"></i> Reject
                     </button>
-                </div>
+                @endunless
+            @else
+                <p class="text-body-secondary mb-0">
+                    Form ini belum ditandatangani. Blok tanda tangan di kanan bawah PDF hanya diisi oleh Group Head
+                    (terpasang otomatis saat Group Head membuka form yang sudah lengkap).
+                </p>
+            @endif
 
+            @if(auth()->user()->isGroupHead() && ! $check->isRejected())
                 @error('reject_note') <div class="alert alert-danger mt-3 mb-0">{{ $message }}</div> @enderror
 
                 <div class="collapse mt-3 {{ $errors->has('reject_note') ? 'show' : '' }}" id="rejectBox">
@@ -203,11 +204,6 @@
                         <button type="submit" class="btn btn-danger btn-sm">Reject &amp; Kembalikan ke Staf</button>
                     </form>
                 </div>
-            @else
-                <p class="text-body-secondary mb-0">
-                    Form ini belum ditandatangani. Blok tanda tangan di kanan bawah PDF hanya diisi oleh Group Head,
-                    jadi dibiarkan kosong sampai Group Head menandatangani.
-                </p>
             @endif
         </div>
     </div>

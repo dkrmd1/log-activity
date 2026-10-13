@@ -1,19 +1,17 @@
-NOTIFIKASI TANDA TANGAN / PERSETUJUAN + TOLAK FORM KONTROL SERVER (v3)
-=======================================================================
+TANDA TANGAN OTOMATIS + NOTIFIKASI + REJECT (v4)
+================================================
 Log Activity IT & GA
 
 CARA PASANG
 1. Ekstrak ZIP ini LANGSUNG ke root proyek (folder yang berisi artisan, app, routes, ...).
-   Pilih "Replace / Timpa" kalau ditanya. Kalau Anda sudah memasang ZIP v1/v2, tidak apa-apa,
-   file v3 menimpanya (ZIP ini sudah berisi semuanya).
-2. Buat tabel & kolom baru di database.
+   Pilih "Replace / Timpa" kalau ditanya. ZIP ini sudah berisi semua versi sebelumnya (v1-v3),
+   jadi cukup pasang yang ini.
+2. Buat tabel & kolom baru di database (lewati bagian yang sudah Anda jalankan dari versi sebelumnya).
    a) Ada Terminal :  php artisan migrate
-      (membuat tabel notifications + 4 kolom penolakan di server_checks)
-   b) Tanpa Terminal (cPanel): buka phpMyAdmin -> pilih database -> tab SQL, lalu jalankan
-      SATU PER SATU, urut:
-        1. isi sql/notifications.sql          (lewati kalau tabel notifications sudah dibuat dari v1)
-        2. isi sql/server-check-reject.sql
-      Jangan jalankan salah satunya dua kali, dan jangan campur dengan php artisan migrate.
+   b) Tanpa Terminal (cPanel): phpMyAdmin -> pilih database -> tab SQL, jalankan SATU PER SATU:
+        1. isi sql/notifications.sql          (lewati kalau tabel notifications sudah ada)
+        2. isi sql/server-check-reject.sql    (lewati kalau kolom rejected_* sudah ada)
+      Jangan jalankan dua kali, dan jangan campur dengan php artisan migrate.
 3. Bersihkan cache:  php artisan view:clear && php artisan route:clear
    (tanpa Terminal: hapus isi storage/framework/views dan bootstrap/cache/routes-*.php kalau ada)
 
@@ -26,7 +24,8 @@ FILE YANG DITIMPA (sudah ada di proyek)
   app/Models/ServerCheck.php
   app/Http/Controllers/ReportApprovalController.php
   app/Http/Controllers/ServerCheckController.php
-  tests/Feature/ServerCheckSignatureTest.php      (hanya teks tombol "Tanda Tangani Form" -> "Approve")
+  app/Http/Controllers/MonthlyReportController.php
+  tests/Feature/ServerCheckSignatureTest.php      (hanya menyesuaikan teks tombol)
 
 FILE BARU
   app/Notifications/SignatureActivity.php
@@ -38,26 +37,29 @@ FILE BARU
   tests/Feature/SignatureNotificationTest.php     (opsional, untuk dites di lokal)
   sql/*.sql                                        (hanya untuk phpMyAdmin, tidak perlu diunggah ke server)
 
+TANDA TANGAN OTOMATIS GROUP HEAD (tidak ada tombol Approve / ttd)
+  Kontrol Server:
+    - Saat Group Head MEMBUKA halaman form (ikon Lihat/pensil di daftar), tanda tangannya terpasang
+      otomatis, dengan syarat: form sudah LENGKAP (ketiga waktu pemeriksaan terisi semua item),
+      belum ditandatangani, tidak sedang ditolak, dan Group Head sudah punya tanda tangan di Profil.
+    - Pratinjau PDF / download PDF tidak memasang tanda tangan (hanya menampilkan).
+    - Kalau ada beberapa Group Head, yang pertama membuka yang tertera.
+  Laporan Bulanan:
+    - Saat Group Head membuka halaman Laporan Bulanan periode yang sudah DIAJUKAN Staf, laporan otomatis
+      disetujui & ditandatangani, dengan syarat: data belum berubah sejak diajukan dan Group Head
+      punya tanda tangan di Profil. Kalau data berubah, Staf harus mengajukan ulang.
+  Satu-satunya tombol Group Head: REJECT (keterangan wajib). Reject juga bisa dipakai untuk membatalkan
+  form/laporan yang sudah otomatis ditandatangani: tanda tangan dicabut, Staf diberi tahu beserta keterangan.
+  Setelah Staf merevisi dan Group Head membuka lagi, tanda tangan terpasang otomatis lagi.
+  (Route sign/unsign/approve lama masih ada di server tetapi tidak punya tombol di tampilan.)
+
 ATURAN NOTIFIKASI
   Staf ajukan Laporan Bulanan              -> semua Group Head
-  Group Head setujui / tolak laporan       -> Staf pengaju
+  Group Head membuka laporan (otomatis ACC)-> Staf pengaju
+  Group Head Reject laporan                -> Staf pengaju (dengan catatan)
   Staf melengkapi form Kontrol Server      -> semua Group Head  (sekali, saat 3 waktu pemeriksaan terisi semua)
-  Staf ubah form yang sudah di-ttd         -> semua Group Head  (ttd terhapus, perlu ttd ulang)
-  Group Head ttd / batal ttd form          -> Staf pembuat + Staf yang paraf
-  Group Head TOLAK form (wajib keterangan) -> Staf pembuat + Staf yang paraf (keterangan ikut di notifikasi)
-  Staf merevisi form yang ditolak          -> semua Group Head  ("sudah direvisi, mohon diperiksa ulang")
+  Staf ubah form yang sudah ditandatangani -> semua Group Head  (ttd terhapus, terpasang lagi saat dibuka)
+  Group Head membuka form lengkap (otomatis ttd) -> Staf pembuat + Staf yang paraf
+  Group Head Reject form (wajib keterangan)-> Staf pembuat + Staf yang paraf
+  Staf merevisi form yang ditolak          -> semua Group Head
   Admin tidak ada di rantai persetujuan, jadi tidak menerima notifikasi.
-
-ATURAN TOLAK FORM KONTROL SERVER
-  - Hanya Group Head. Keterangan WAJIB diisi (maks. 1000 karakter).
-  - Form yang sudah ditandatangani tidak bisa ditolak: batalkan tanda tangan dulu.
-  - Keterangan tampil sebagai kotak merah di halaman form (dilihat Staf) dan badge "Ditolak" di daftar.
-  - Penolakan dicabut otomatis saat Staf menyimpan perubahan nyata, atau saat Group Head menandatangani.
-  - Menolak tidak mengubah updated_at, jadi tidak membuat Laporan Bulanan dianggap "data berubah".
-
-TOMBOL (v3)
-  Group Head memakai dua tombol yang sama di Kontrol Server dan Laporan Bulanan:
-    Approve  (dulu "Tanda Tangani Form" / "Setujui (ACC)")  -> membubuhkan tanda tangan
-    Reject   (dulu "Tolak / Minta Revisi", dan "Hapus" di daftar Kontrol Server) -> wajib isi keterangan
-  Di daftar Kontrol Server, Group Head melihat Approve & Reject (bukan Hapus). Staf dan Admin tetap
-  melihat Hapus. Form yang sudah di-Approve dibatalkan lewat halaman form ("Batalkan Approve").

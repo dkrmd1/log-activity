@@ -291,20 +291,6 @@ class SignatureNotificationTest extends TestCase
         $this->assertFalse($check->fresh()->isRejected());
     }
 
-    public function test_form_yang_sudah_ditandatangani_tidak_bisa_ditolak_sebelum_ttd_dibatalkan(): void
-    {
-        $check = $this->newCheck();
-        $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check));
-        $this->actingAs($this->gh)->post(route('server-checks.sign', $check));
-
-        $this->actingAs($this->gh)
-            ->post(route('server-checks.reject', $check), ['reject_note' => 'Salah'])
-            ->assertSessionHas('error');
-
-        $this->assertFalse($check->fresh()->isRejected());
-        $this->assertTrue($check->fresh()->isSigned());
-    }
-
     public function test_staf_merevisi_form_ditolak_mencabut_penolakan_dan_memberi_tahu_group_head(): void
     {
         $check = $this->newCheck();
@@ -337,68 +323,151 @@ class SignatureNotificationTest extends TestCase
         $this->assertFalse($check->fresh()->isRejected());
     }
 
-    public function test_keterangan_penolakan_tampil_di_halaman_form_dan_daftar(): void
+    // ---------- Tanda tangan OTOMATIS saat Group Head membuka form ----------
+
+    public function test_group_head_membuka_form_lengkap_otomatis_ditandatangani_tanpa_tombol_approve(): void
     {
         $check = $this->newCheck();
         $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check));
-        $this->actingAs($this->gh)->post(route('server-checks.reject', $check), ['reject_note' => 'Paraf baris 3 kurang']);
+        $this->assertFalse($check->fresh()->isSigned());
 
-        $this->actingAs($this->staff)->get(route('server-checks.edit', $check))
-            ->assertOk()
-            ->assertSee('Ditolak oleh Group Head Satu')
-            ->assertSee('Paraf baris 3 kurang')
-            ->assertSee('Perbaiki isi form');
-
-        $this->actingAs($this->staff)->get(route('server-checks.index'))
-            ->assertOk()
-            ->assertSee('Ditolak');
-
-        // Group Head melihat tombol tolak + kolom keterangan; Admin tidak melihat tombol tolak.
         $this->actingAs($this->gh)->get(route('server-checks.edit', $check))
             ->assertOk()
+            ->assertSee('ditandatangani otomatis atas nama Anda')
+            ->assertSee('Group Head Satu')
             ->assertSee('Reject')
-            ->assertSee('Keterangan penolakan');
+            ->assertDontSee('Approve')
+            ->assertDontSee('Batalkan');
 
-        $this->actingAs($this->admin)->get(route('server-checks.edit', $check))
-            ->assertOk()
-            ->assertDontSee('Reject');
+        $fresh = $check->fresh();
+        $this->assertTrue($fresh->isSigned());
+        $this->assertSame($this->gh->id, (int) $fresh->signed_by);
+        $this->assertContains('Form Kontrol Server ditandatangani', $this->titles($this->staff));
+
+        // Dibuka lagi: tidak menandatangani ulang dan tidak mengirim notifikasi dobel.
+        $this->actingAs($this->gh)->get(route('server-checks.edit', $check))->assertOk();
+        $this->assertCount(1, array_keys(array_filter($this->titles($this->staff), fn ($t) => $t === 'Form Kontrol Server ditandatangani')));
     }
 
-    // ---------- Tombol Approve / Reject ----------
+    public function test_form_belum_lengkap_tidak_ditandatangani_saat_dibuka(): void
+    {
+        $check = $this->newCheck();
+        $first = $check->entries->first();
+        $this->actingAs($this->staff)->put(route('server-checks.update', $check), ['entries' => [$first->id => ['c1' => 'OK']]]);
 
-    public function test_daftar_form_group_head_melihat_approve_dan_reject_bukan_hapus(): void
+        $this->actingAs($this->gh)->get(route('server-checks.edit', $check))
+            ->assertOk()
+            ->assertSee('belum lengkap')
+            ->assertDontSee('ditandatangani otomatis atas nama Anda');
+
+        $this->assertFalse($check->fresh()->isSigned());
+    }
+
+    public function test_hanya_group_head_yang_memicu_tanda_tangan_otomatis(): void
+    {
+        $check = $this->newCheck();
+        $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check));
+
+        foreach ([$this->staff, $this->staff2, $this->admin] as $u) {
+            $this->actingAs($u)->get(route('server-checks.edit', $check))->assertOk();
+        }
+
+        $this->assertFalse($check->fresh()->isSigned());
+    }
+
+    public function test_group_head_tanpa_tanda_tangan_profil_tidak_menandatangani_dan_diberi_peringatan(): void
+    {
+        $check = $this->newCheck();
+        $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check));
+        $this->gh->update(['signature' => null]);
+
+        $this->actingAs($this->gh->fresh())->get(route('server-checks.edit', $check))
+            ->assertOk()
+            ->assertSee('belum ada di Profil');
+
+        $this->assertFalse($check->fresh()->isSigned());
+    }
+
+    public function test_form_yang_ditolak_tidak_ditandatangani_otomatis_sampai_direvisi(): void
+    {
+        $check = $this->newCheck();
+        $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check));
+        $this->actingAs($this->gh)->get(route('server-checks.edit', $check)); // otomatis ditandatangani
+        $this->actingAs($this->gh)->post(route('server-checks.reject', $check), ['reject_note' => 'Salah isi']);
+
+        // Ditolak: ttd dicabut dan tidak terpasang lagi saat dibuka.
+        $this->assertFalse($check->fresh()->isSigned());
+        $this->actingAs($this->gh)->get(route('server-checks.edit', $check))->assertOk()->assertSee('menunggu Staf merevisi');
+        $this->assertFalse($check->fresh()->isSigned());
+
+        // Staf merevisi -> Group Head membuka lagi -> otomatis ditandatangani.
+        $check = $check->fresh()->load('entries');
+        $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check, 'NOK'));
+        $this->actingAs($this->gh)->get(route('server-checks.edit', $check))->assertOk();
+
+        $fresh = $check->fresh();
+        $this->assertTrue($fresh->isSigned());
+        $this->assertFalse($fresh->isRejected());
+    }
+
+    public function test_reject_form_yang_sudah_ditandatangani_mencabut_tanda_tangan(): void
+    {
+        $check = $this->newCheck();
+        $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check));
+        $this->actingAs($this->gh)->get(route('server-checks.edit', $check));
+        $this->assertTrue($check->fresh()->isSigned());
+
+        $this->actingAs($this->gh)
+            ->post(route('server-checks.reject', $check), ['reject_note' => 'Ulangi pemeriksaan jam 16:30'])
+            ->assertRedirect();
+
+        $fresh = $check->fresh();
+        $this->assertFalse($fresh->isSigned());
+        $this->assertNull($fresh->signed_signature);
+        $this->assertTrue($fresh->isRejected());
+        $this->assertContains('Form Kontrol Server ditolak', $this->titles($this->staff));
+    }
+
+    public function test_staf_mengubah_form_yang_otomatis_ditandatangani_memberi_notifikasi_ttd_ulang(): void
+    {
+        $check = $this->newCheck();
+        $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check));
+        $this->actingAs($this->gh)->get(route('server-checks.edit', $check));
+        $this->assertTrue($check->fresh()->isSigned());
+
+        $check = $check->fresh()->load('entries');
+        $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check, 'NOK'));
+
+        $this->assertFalse($check->fresh()->isSigned());
+        $this->assertContains('Form perlu ditandatangani ulang', $this->titles($this->gh));
+
+        // Group Head membuka lagi -> terpasang otomatis lagi.
+        $this->actingAs($this->gh)->get(route('server-checks.edit', $check))->assertOk();
+        $this->assertTrue($check->fresh()->isSigned());
+    }
+
+    // ---------- Daftar Kontrol Server: Reject saja untuk Group Head ----------
+
+    public function test_daftar_form_group_head_hanya_melihat_reject_bukan_approve_atau_hapus(): void
     {
         $check = $this->newCheck();
         $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check));
 
         $this->actingAs($this->gh)->get(route('server-checks.index'))
             ->assertOk()
-            ->assertSee('title="Approve"', false)
             ->assertSee('title="Reject"', false)
             ->assertSee('id="rejectModal"', false)
+            ->assertDontSee('title="Approve"', false)
             ->assertDontSee('title="Hapus"', false);
 
-        // Staf & Admin tetap melihat Hapus, tanpa Approve/Reject.
+        // Staf & Admin tetap melihat Hapus, tanpa Reject.
         foreach ([$this->staff, $this->admin] as $u) {
             $this->actingAs($u)->get(route('server-checks.index'))
                 ->assertOk()
                 ->assertSee('title="Hapus"', false)
-                ->assertDontSee('title="Approve"', false)
                 ->assertDontSee('title="Reject"', false)
                 ->assertDontSee('id="rejectModal"', false);
         }
-    }
-
-    public function test_daftar_form_yang_sudah_di_approve_tidak_menampilkan_tombol_lagi_untuk_group_head(): void
-    {
-        $check = $this->newCheck();
-        $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check));
-        $this->actingAs($this->gh)->post(route('server-checks.sign', $check));
-
-        $this->actingAs($this->gh)->get(route('server-checks.index'))
-            ->assertOk()
-            ->assertDontSee('title="Approve"', false)
-            ->assertDontSee('title="Reject"', false);
     }
 
     public function test_reject_dari_daftar_wajib_keterangan_dan_berhasil_dengan_keterangan(): void
@@ -418,22 +487,105 @@ class SignatureNotificationTest extends TestCase
         $this->assertTrue($check->fresh()->isRejected());
     }
 
-    public function test_laporan_bulanan_memakai_tombol_approve_dan_reject(): void
+    public function test_keterangan_penolakan_tampil_untuk_staf_di_halaman_form_dan_daftar(): void
+    {
+        $check = $this->newCheck();
+        $this->actingAs($this->staff)->put(route('server-checks.update', $check), $this->fullPayload($check));
+        $this->actingAs($this->gh)->post(route('server-checks.reject', $check), ['reject_note' => 'Paraf baris 3 kurang']);
+
+        $this->actingAs($this->staff)->get(route('server-checks.edit', $check))
+            ->assertOk()
+            ->assertSee('Ditolak oleh Group Head Satu')
+            ->assertSee('Paraf baris 3 kurang')
+            ->assertSee('Perbaiki isi form');
+
+        $this->actingAs($this->staff)->get(route('server-checks.index'))
+            ->assertOk()
+            ->assertSee('Ditolak');
+    }
+
+    // ---------- Laporan Bulanan: persetujuan OTOMATIS saat Group Head membuka ----------
+
+    private function ajukanLaporan(): void
     {
         $this->newCheck();
-        $this->actingAs($this->staff)->post(route('reports.submit'), ['bulan' => 9, 'tahun' => 2026]);
+        $this->actingAs($this->staff)->post(route('reports.submit'), ['bulan' => 9, 'tahun' => 2026])->assertRedirect();
+        $this->assertSame(MonthlyReport::SUBMITTED, MonthlyReport::first()->status);
+    }
+
+    public function test_laporan_otomatis_disetujui_saat_group_head_membuka_tanpa_tombol_approve(): void
+    {
+        $this->ajukanLaporan();
 
         $this->actingAs($this->gh)->get(route('reports.index', ['bulan' => 9, 'tahun' => 2026]))
             ->assertOk()
-            ->assertSee('Approve')
+            ->assertSee('ditandatangani otomatis atas nama Anda')
             ->assertSee('Reject')
-            ->assertDontSee('Setujui (ACC)')
-            ->assertDontSee('Tolak / Minta Revisi');
+            ->assertDontSee('Approve')
+            ->assertDontSee('Setujui (ACC)');
 
-        // Staf tidak melihat Approve/Reject (hanya Ajukan).
-        $this->actingAs($this->staff)->get(route('reports.index', ['bulan' => 9, 'tahun' => 2026]))
+        $report = MonthlyReport::first();
+        $this->assertSame(MonthlyReport::APPROVED, $report->status);
+        $this->assertSame($this->gh->id, (int) $report->reviewed_by);
+        $this->assertNotEmpty($report->reviewed_signature);
+        $this->assertContains('Laporan Bulanan disetujui', $this->titles($this->staff));
+    }
+
+    public function test_staf_dan_admin_membuka_laporan_tidak_menyetujui(): void
+    {
+        $this->ajukanLaporan();
+
+        foreach ([$this->staff, $this->staff2, $this->admin] as $u) {
+            $this->actingAs($u)->get(route('reports.index', ['bulan' => 9, 'tahun' => 2026]))->assertOk();
+        }
+
+        $this->assertSame(MonthlyReport::SUBMITTED, MonthlyReport::first()->status);
+    }
+
+    public function test_laporan_tidak_disetujui_otomatis_kalau_data_berubah_setelah_diajukan(): void
+    {
+        $this->ajukanLaporan();
+        ServerCheck::createForDate('2026-09-02', $this->staff->id); // data bulan ini bertambah
+
+        $this->actingAs($this->gh)->get(route('reports.index', ['bulan' => 9, 'tahun' => 2026]))
             ->assertOk()
-            ->assertDontSee('btn btn-success', false)
-            ->assertDontSee('id="rejectBox"', false);
+            ->assertSee('berubah');
+
+        $this->assertSame(MonthlyReport::SUBMITTED, MonthlyReport::first()->status);
+    }
+
+    public function test_laporan_tidak_disetujui_otomatis_kalau_group_head_belum_punya_tanda_tangan(): void
+    {
+        $this->ajukanLaporan();
+        $this->gh->update(['signature' => null]);
+
+        $this->actingAs($this->gh->fresh())->get(route('reports.index', ['bulan' => 9, 'tahun' => 2026]))
+            ->assertOk()
+            ->assertSee('ditandatangani otomatis saat Anda membuka halaman ini');
+
+        $this->assertSame(MonthlyReport::SUBMITTED, MonthlyReport::first()->status);
+    }
+
+    public function test_reject_laporan_yang_sudah_otomatis_disetujui_mencabut_persetujuan_dan_tanda_tangan(): void
+    {
+        $this->ajukanLaporan();
+        $this->actingAs($this->gh)->get(route('reports.index', ['bulan' => 9, 'tahun' => 2026]));
+        $this->assertSame(MonthlyReport::APPROVED, MonthlyReport::first()->status);
+
+        $this->actingAs($this->gh)
+            ->post(route('reports.reject'), ['bulan' => 9, 'tahun' => 2026, 'review_note' => 'Angka backup salah'])
+            ->assertRedirect();
+
+        $report = MonthlyReport::first();
+        $this->assertSame(MonthlyReport::REJECTED, $report->status);
+        $this->assertNull($report->reviewed_signature);
+        $this->assertSame('Angka backup salah', $report->review_note);
+
+        $n = $this->staff->fresh()->notifications->firstWhere('data.title', 'Laporan Bulanan ditolak');
+        $this->assertNotNull($n);
+
+        // Dibuka lagi: laporan yang ditolak tidak disetujui otomatis (menunggu Staf mengajukan ulang).
+        $this->actingAs($this->gh)->get(route('reports.index', ['bulan' => 9, 'tahun' => 2026]))->assertOk();
+        $this->assertSame(MonthlyReport::REJECTED, MonthlyReport::first()->status);
     }
 }

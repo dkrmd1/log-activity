@@ -26,6 +26,12 @@ class MonthlyReportController extends Controller
         $bulan = (int) $request->query('bulan', now()->month);
         $tahun = (int) $request->query('tahun', now()->year);
 
+        // Group Head membuka laporan yang sudah diajukan -> disetujui & ditandatangani otomatis.
+        if ($request->user()->isGroupHead()
+            && app(ReportApprovalController::class)->autoApprove($request->user(), $bulan, $tahun) === 'approved') {
+            session()->now('success', 'Laporan sudah ditandatangani otomatis atas nama Anda. Klik Reject (wajib isi catatan) kalau ada yang perlu diperbaiki.');
+        }
+
         $preview = $this->buildReportData($bulan, $tahun);
 
         // Status persetujuan periode ini + apakah data berubah sejak diajukan/disetujui.

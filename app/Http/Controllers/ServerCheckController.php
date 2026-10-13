@@ -69,9 +69,12 @@ class ServerCheckController extends Controller
             ->with('success', 'Form berhasil dibuat. Silakan isi pemeriksaan.');
     }
 
-    public function edit(ServerCheck $server_check)
+    public function edit(Request $request, ServerCheck $server_check)
     {
         $server_check->load('entries.parafUser');
+
+        // Group Head membuka form yang sudah lengkap -> tanda tangan terpasang otomatis.
+        $this->autoSign($request->user(), $server_check);
 
         return view('server-checks.edit', [
             'check' => $server_check,
@@ -174,7 +177,7 @@ class ServerCheckController extends Controller
                     $server_check,
                     $actor,
                     'Form perlu ditandatangani ulang',
-                    "{$actor->name} mengubah Form Kontrol Server {$server_check->date_label} yang sudah ditandatangani. Tanda tangan dihapus, mohon tanda tangani ulang.",
+                    "{$actor->name} mengubah Form Kontrol Server {$server_check->date_label} yang sudah ditandatangani. Tanda tangan dihapus dan akan terpasang otomatis lagi saat Anda membuka form yang sudah lengkap.",
                     'tabler-alert-triangle',
                     'warning'
                 );
@@ -183,7 +186,7 @@ class ServerCheckController extends Controller
                     $server_check,
                     $actor,
                     'Form Kontrol Server siap diperiksa',
-                    "{$actor->name} melengkapi Form Kontrol Server {$server_check->date_label}. Menunggu pemeriksaan dan tanda tangan Anda.",
+                    "{$actor->name} melengkapi Form Kontrol Server {$server_check->date_label}. Buka form untuk memeriksa; tanda tangan Anda terpasang otomatis saat form dibuka.",
                     'tabler-clipboard-check',
                     'warning'
                 );
@@ -194,7 +197,7 @@ class ServerCheckController extends Controller
             ->route('server-checks.edit', $server_check)
             ->with('success', $changed > 0
                 ? 'Form berhasil disimpan.'
-                    . ($signatureReset ? ' Tanda tangan Group Head dihapus karena isi berubah, Group Head perlu menandatangani ulang.' : '')
+                    . ($signatureReset ? ' Tanda tangan Group Head dihapus karena isi berubah dan akan terpasang otomatis lagi saat Group Head membuka form.' : '')
                     . ($revised ? ' Penolakan dicabut dan Group Head sudah diberi tahu untuk memeriksa ulang.' : '')
                 : 'Tidak ada perubahan.');
     }
@@ -218,32 +221,7 @@ class ServerCheckController extends Controller
             return back()->with('error', 'Tanda tangan Anda belum ada. Isi dulu di menu Profil Saya, lalu tanda tangani lagi.');
         }
 
-        // Ganti tanda tangan sebelumnya (kalau ada) dengan yang baru.
-        Signature::delete($server_check->signed_signature);
-
-        $server_check->timestamps = false; // tanda tangan bukan perubahan data
-        $server_check->update([
-            'signed_by' => $user->id,
-            'signed_name' => $user->name,
-            'signed_signature' => Signature::snapshot($user->signature),
-            'signed_at' => now(),
-            // Ditandatangani = disetujui, jadi penolakan sebelumnya (kalau ada) tidak berlaku lagi.
-            'rejected_by' => null,
-            'rejected_name' => null,
-            'reject_note' => null,
-            'rejected_at' => null,
-        ]);
-        $server_check->timestamps = true;
-
-        // Notifikasi ke pembuat form & petugas yang memberi paraf.
-        $this->notifyStaff(
-            $server_check,
-            $user,
-            'Form Kontrol Server ditandatangani',
-            "{$user->name} menandatangani Form Kontrol Server {$server_check->date_label}.",
-            'tabler-signature',
-            'success'
-        );
+        $this->signAs($server_check, $user);
 
         return back()->with('success', 'Form berhasil ditandatangani.');
     }
@@ -290,8 +268,9 @@ class ServerCheckController extends Controller
             ['reject_note' => 'Keterangan']
         );
 
+        // Tanda tangan otomatis ikut dicabut kalau form ini sudah ditandatangani.
         if ($server_check->isSigned()) {
-            return back()->with('error', 'Form ini sudah ditandatangani. Batalkan tanda tangan dulu kalau ingin menolaknya.');
+            $server_check->clearSignature();
         }
 
         $note = trim((string) $request->input('reject_note'));
@@ -341,6 +320,63 @@ class ServerCheckController extends Controller
     public function preview(ServerCheck $server_check)
     {
         return $this->respond($server_check, true);
+    }
+
+    /**
+     * Tanda tangan OTOMATIS. Dipasang saat Group Head membuka halaman form yang:
+     *   - sudah LENGKAP (ketiga waktu pemeriksaan terisi untuk semua item),
+     *   - belum ditandatangani, dan
+     *   - tidak sedang ditolak (menunggu revisi Staf).
+     * Pembatalannya lewat Reject (wajib keterangan).
+     */
+    protected function autoSign(User $user, ServerCheck $check): void
+    {
+        if (! $user->isGroupHead() || $check->isSigned() || $check->isRejected() || ! $this->isComplete($check)) {
+            return;
+        }
+
+        if (! Signature::exists($user->signature)) {
+            session()->now('error', 'Tanda tangan Anda belum ada di Profil, jadi form ini belum bisa ditandatangani otomatis. Isi dulu di menu Profil Saya.');
+
+            return;
+        }
+
+        $this->signAs($check, $user);
+
+        session()->now('success', 'Form sudah lengkap dan ditandatangani otomatis atas nama Anda. Klik Reject (wajib isi keterangan) kalau ada yang perlu diperbaiki.');
+    }
+
+    /**
+     * Bubuhkan tanda tangan Group Head (snapshot dari Profil) lalu beri tahu Staf.
+     */
+    protected function signAs(ServerCheck $check, User $user): void
+    {
+        // Ganti tanda tangan sebelumnya (kalau ada) dengan yang baru.
+        Signature::delete($check->signed_signature);
+
+        $check->timestamps = false; // tanda tangan bukan perubahan data
+        $check->update([
+            'signed_by' => $user->id,
+            'signed_name' => $user->name,
+            'signed_signature' => Signature::snapshot($user->signature),
+            'signed_at' => now(),
+            // Ditandatangani = disetujui, jadi penolakan sebelumnya (kalau ada) tidak berlaku lagi.
+            'rejected_by' => null,
+            'rejected_name' => null,
+            'reject_note' => null,
+            'rejected_at' => null,
+        ]);
+        $check->timestamps = true;
+
+        // Notifikasi ke pembuat form & petugas yang memberi paraf.
+        $this->notifyStaff(
+            $check,
+            $user,
+            'Form Kontrol Server ditandatangani',
+            "{$user->name} menandatangani Form Kontrol Server {$check->date_label}.",
+            'tabler-signature',
+            'success'
+        );
     }
 
     /**
